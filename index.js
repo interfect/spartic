@@ -21,14 +21,14 @@ import crypto from 'hypercore-crypto'
  *
  * The other possible 4-bit patterns are disallowed because they have an odd
  * number of 1-bits. The number of possible bit patterns for N synchronized
- * streams is:
+ * streams (for even N, as odd N is impossible) is:
  *
  * \sum_i=0^N/2 {N \choose i*2}
  *
  * For 4 participants, there are 8 patterns. For 6 participants, there are 32.
- * For 8 participants, there are 128. Note that the number of patterns is
- * conveniently a power of two, so they can be numbered with binary numbers of
- * a certain length without any unused numbers.
+ * For 8 participants, there are 128. Note that these pattern lists are
+ * conveniently of lengths that are powers of two, so they can be numbered with
+ * binary numbers of a certain length without any unused numbers.
  *
  * Because synchronized keystreams have this property, data XORed with one
  * keystream to encrypt it can be decrypted by XORing it with the output of all
@@ -90,7 +90,9 @@ import crypto from 'hypercore-crypto'
  * agreed to an odd number of swaps conditioned on that bit, while if it is 0
  * they have agreed to an even number of swaps conditioned on that bit (or no
  * swaps). Agreeing to a swap conditioned on a bit results in toggling that
- * bit.
+ * bit. To compute the bit to emit, look up your column bit value using the low
+ * bits of the state, then XOR the state with the swap bit vector, and then XOR
+ * all the bits of that result with your bit.
  *
  * We allow each party to unilaterally determine and send each other party a
  * list of swaps (again in the form of a bit vector) that the other party will
@@ -100,6 +102,13 @@ import crypto from 'hypercore-crypto'
  * set of swaps that that party is actually using will be cryptographically
  * strong and not known to anyone else, and therefore nobody will be able to
  * predict the participant's keystream.
+ *
+ * TODO: Since the swap set bit vector is the same at every step, and the state
+ * vector that is XORed with it is known to all participants, and the canonical
+ * bit value list is known to all participants, and we *mostly* don't XOR in
+ * data, aren't we leaking information about the swap set with every bit? How
+ * much information? As much as 1 bit per bit? Do we need to re-propose swaps
+ * frequently to inject more entropy?
  */
 class SynchronizedKeystream {
 }
