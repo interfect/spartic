@@ -1,0 +1,11 @@
+{
+    "name": "spartic",
+    "version": "0.0.1",
+    "type": "module",
+    "dependencies": {
+        "hyperswarm": "^4.3.5"
+    },
+    "scripts": {
+        "start": "node app.js"
+    }
+}
