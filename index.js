@@ -1,5 +1,11 @@
 import Hyperswarm from 'hyperswarm'
 import crypto from 'hypercore-crypto'
+import xsalsa20 from 'xsalsa20'
+import sodium from 'sodium-universal'
+import b4a from 'b4a'
+
+/// How long is a Sodium generic hash, in bytes?
+export const HASH_SIZE = 32
 
 /**
  * Represents one of a collection of "synchronized" keystreams. The keystreams
@@ -51,66 +57,43 @@ import crypto from 'hypercore-crypto'
  * it knows is synchronized with those of all of the other parties, but which
  * is also not predictable by any of the other parties, and ideally not
  * predictable by subsets of less than all of the other parties working
- * together. To accomplish this, we propose a scheme that starts with
- * synchronized but fully predictable keystreams, and makes them unpredictable
- * while retaining synchronization by a series of conditional swaps.
- *
- * First, the parties number themselves. Each party computes the list of
- * possible bit patterns for all of the streams, in a canonical order, and
- * pulls out its column. It then constructs a function that maps from the low
- * bits of a uniform random "state" bit vector to a row in that party's column
- * of the canonical list of combinations, and thus to a bit value (0 or 1). It
- * is important that 0 and 1 are equally likely for all participants, which is
- * easy when the number of possible bit patterns is a power of two, since some
- * number of the low bits of the state can be used to map into the list of
- * possible patterns directly.
- *
- * At this point, for any state, all parties can compute a synchronized set of
- * bits: most of the bits in the state are ignored, and the low bits choose a
- * possible pattern from the canonical list, and then each party emits their
- * assigned bit, guaranteeing the parity constraint that defines
- * synchronization. The task is then to prevent each party from being able to
- * predict what bit each of the other parties will emit, without changing the
- * total parity.
- *
- * To do this, we add a mechanism for pairs of parties to agree on "swaps" with
- * each other where, conditioned on the value of some bit in the state vector,
- * they both agree to flip their emitted bits, which preserves parity but makes
- * their emitted bits harder to predict. If one party would have emitted 1 but
- * the other 0, they actually swap, while if both would have emitted 1 or both
- * 0, they both flip and emit the other value.
- 
- * The set of swaps between two parties is a shared secret that they know but
- * the other parties do not, even collectively. The only people who know the
- * full set of swaps that a party is participating in is that party, or a set
- * of all other parties colluding.
- *
- * The net effect of a set of swaps can be represented by a bit vector the same
- * length as the state. If a bit is set in the vector, then the party has
- * agreed to an odd number of swaps conditioned on that bit, while if it is 0
- * they have agreed to an even number of swaps conditioned on that bit (or no
- * swaps). Agreeing to a swap conditioned on a bit results in toggling that
- * bit. To compute the bit to emit, look up your column bit value using the low
- * bits of the state, then XOR the state with the swap bit vector, and then XOR
- * all the bits of that result with your bit.
- *
- * We allow each party to unilaterally determine and send each other party a
- * list of swaps (again in the form of a bit vector) that the other party will
- * agree to. That bit vector will get XORed into the swap state. As long as a
- * given party generates a cryptographically-strong set of swaps to propose to
- * each other participant, and the other participants do not all collude, the
- * set of swaps that that party is actually using will be cryptographically
- * strong and not known to anyone else, and therefore nobody will be able to
- * predict the participant's keystream.
- *
- * TODO: Since the swap set bit vector is the same at every step, and the state
- * vector that is XORed with it is known to all participants, and the canonical
- * bit value list is known to all participants, and we *mostly* don't XOR in
- * data, aren't we leaking information about the swap set with every bit? How
- * much information? As much as 1 bit per bit? Do we need to re-propose swaps
- * frequently to inject more entropy?
+ * together. This is accomplished by having each pair of parties share a
+ * standard stream cypher keystream; each party's synchronized keystream is the
+ * XOR of all the pairwise keystreams they have. Since each pairwise keystream
+ * gets XORed into two parties streams, the streams are all synchronized.
  */
-class SynchronizedKeystream {
+export class SynchronizedKeystream {
+  /// Make a new SynchronizedKeystream using the given list of shared secrets
+  /// with each of the other parties. Each shared secret must be a 32-byte
+  /// buffer.
+  constructor(shared_secrets) {
+    this.keys = shared_secrets.slice(0, shared_secrets.length)
+  }
+  
+  /// Read a block of data from our keystream, with the given sequence number and length.
+  /// We always get the same data for a given sequence number; don't re-use it!
+  read(sequence_number, length) {
+    // TODO: We could just keep some xsalsa20 objects around and not have to
+    // worry about sequence numbers. But then we couldn't ever resume I think?
+  
+    // Make the buffer we will do all our XORing in. Starts as 0.
+    let scratch = b4a.alloc(length)
+    
+    // Prepare the nonce (same for all streams)
+    // TODO: support more than 53-bit sequence numbers?
+    let nonce = b4a.alloc(xsalsa20.NONCEBYTES)
+    nonce.writeUInt32BE(sequence_number >> 32, 0)
+    nonce.writeUInt32BE(sequence_number & 0xFFFFFFFF, 4)
+    
+    for (let key of this.keys) {
+      // XOR what we have so far with each shared keystream
+      let stream = xsalsa20(nonce, key)
+      scratch = stream.update(scratch)
+      stream.finalize()
+    }
+    
+    return scratch
+  }
 }
 
 
