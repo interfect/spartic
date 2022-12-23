@@ -7,6 +7,10 @@
         "hyperswarm": "^4.3.5"
     },
     "scripts": {
-        "start": "node app.js"
+        "start": "node app.js",
+        "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+    },
+    "devDependencies": {
+        "jest": "^29.3.1"
     }
 }
