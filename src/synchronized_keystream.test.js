@@ -1,21 +1,8 @@
 import buffer_xor from 'buffer-xor'
 import crypto from 'hypercore-crypto'
 import SynchronizedKeystream from './synchronized_keystream.js'
+import xor_all from './xor_all.js'
 
-/// XOR together all the buffers in an array. Returns a new buffer.
-function xor_all(buffers) {
-  if (buffers.length == 0) {
-    return null
-  } else if (buffers.length == 1) {
-    return buffers[0]
-  } else {
-    let scratch = buffers[0]
-    for (let i = 1; i < buffers.length; i++) {
-      scratch = buffer_xor(scratch, buffers[i])
-    }
-    return scratch
-  }
-}
 
 /// Return true if a buffer is entirely 0 and false otherwise.
 function is_all_zero(buffer) {
