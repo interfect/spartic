@@ -4,7 +4,8 @@
     "type": "module",
     "dependencies": {
         "buffer-xor": "^2.0.2",
-        "hyperswarm": "^4.3.5"
+        "hyperswarm": "^4.3.5",
+        "protomux": "^3.4.0"
     },
     "scripts": {
         "start": "node app.js",
