@@ -2,9 +2,6 @@ import crypto from 'hypercore-crypto'
 import xsalsa20 from 'xsalsa20'
 import b4a from 'b4a'
 
-/// How long is a Sodium generic hash, in bytes?
-export const HASH_SIZE = 32
-
 /**
  * Represents one of a collection of "synchronized" keystreams. The keystreams
  * in a synchronized collection have the property that, for corresponding bits
@@ -52,7 +49,13 @@ export const HASH_SIZE = 32
  * XOR of all the pairwise keystreams they have. Since each pairwise keystream
  * gets XORed into two parties streams, the streams are all synchronized.
  */
-export class SynchronizedKeystream {
+export default class SynchronizedKeystream {
+  
+  /// How big are the secrets that need to be shared?
+  static get SECRET_SIZE() {
+    return 32
+  }
+
   /// Make a new SynchronizedKeystream using the given list of shared secrets
   /// with each of the other parties. Each shared secret must be a 32-byte
   /// buffer.

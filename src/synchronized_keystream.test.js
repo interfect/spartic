@@ -1,6 +1,6 @@
 import buffer_xor from 'buffer-xor'
 import crypto from 'hypercore-crypto'
-import {SynchronizedKeystream} from './keystream.js'
+import SynchronizedKeystream from './synchronized_keystream.js'
 
 /// XOR together all the buffers in an array. Returns a new buffer.
 function xor_all(buffers) {
@@ -41,7 +41,7 @@ describe('SynchronizedKeystream', () => {
     }
     for (let i = 0; i < PEERS; i++) {
       for (let j = 0; j < PEERS; j++) {
-        let secret = crypto.randomBytes(32)
+        let secret = crypto.randomBytes(SynchronizedKeystream.SECRET_SIZE)
         peer_secrets[i].push(secret)
         peer_secrets[j].push(secret)
       }
