@@ -1,22 +1,45 @@
 import {SparticPeer} from './index.js'
 import crypto from 'hypercore-crypto'
 
-const peer1 = new SparticPeer()
-const peer2 = new SparticPeer()
+const PEER_COUNT = 4
+const GROUP_ID = 1
 
-// Topics are 32 bytes
-const topic = crypto.randomBytes(32)
+let peers = []
 
-console.log('Starting server listener')
-await peer1.listen()
+for (let i = 0; i < PEER_COUNT; i++) {
+  peers.push(new SparticPeer())
+}
 
-console.log('Connecting client')
-peer2.joinPeer(peer1.keyPair.publicKey)
+console.log('Starting server listeners...')
+for (let i = 0; i < PEER_COUNT; i++) {
+  await peers[i].listen()
+}
+
+console.log('Creating sessions...')
+for (let i = 0; i < PEER_COUNT; i++) {
+  // Make the list of other keys
+  let otherKeys = []
+  for (let j = 0; j < PEER_COUNT; j++) {
+    if (j != i) {
+      otherKeys.push(peers[j].keyPair.publicKey)
+    }
+  }
+  peers[i].createSession(GROUP_ID, otherKeys)
+}
 
 // Wait for the swarm to connect to pending peers.
-console.log('Waiting for client to connect...')
-await peer2.flush()
+console.log('Waiting for clients to connect...')
+for (let i = 0; i < PEER_COUNT; i++) {
+  await peers[i].flush()
+}
 
-console.log('Connection should be up')
+function tick() {
+  console.log('Shipping messages...')
+  for (let i = 0; i < PEER_COUNT; i++) {
+    console.log('Shipping messages from peer ' + i)
+    peers[i].sendSessionMessages(GROUP_ID)
+  }
+  setTimeout(tick, 1000)
+}
 
-// After this point, both client and server should have connections
+setTimeout(tick, 1000)

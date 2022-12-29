@@ -5,6 +5,7 @@
     "dependencies": {
         "buffer-xor": "^2.0.2",
         "hyperswarm": "^4.3.5",
+        "objectstruct": "^1.0.1",
         "protomux": "^3.4.0"
     },
     "scripts": {
