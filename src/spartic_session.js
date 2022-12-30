@@ -11,6 +11,13 @@ import xor_all from './xor_all.js'
  * Then has messages it wants to send queries from it.
  *
  * MUST be protected from messages from peers not in the ring.
+ *
+ * To talk to the ring, use readyToParticipate() and participateInRound() to
+ * feed in the data you want to post (or zeroes), and popResult() to get back
+ * the result blocks with everyone's posted data.
+ *
+ * TODO: To do collision detection we need to match up the results with what we
+ * sent on what round.
  */
 export default class SparticSession {
 
@@ -27,16 +34,16 @@ export default class SparticSession {
     
     // To establish shared keys, we send each peer a key and receive a key from
     // each. Then we can start round 0.
-    this.ourSharedKeys = {}
+    this.ourSharedKeys = new Map()
     for (let pubkey of this.otherPubkeys) {
-      this.ourSharedKeys[pubkey] = crypto.randomBytes(SynchronizedKeystream.SECRET_SIZE) 
+      this.ourSharedKeys.set(pubkey, crypto.randomBytes(SynchronizedKeystream.SECRET_SIZE))
     }
     
     // When we get the ones from the other peers we put them in here.
-    this.theirSharedKeys = {}
+    this.theirSharedKeys = new Map() 
     for (let pubkey of this.otherPubkeys) {
       // Make slots for all the keys we expect
-      this.theirSharedKeys[pubkey] = null
+      this.theirSharedKeys.set(pubkey, null)
     }
 
 
@@ -55,9 +62,9 @@ export default class SparticSession {
     // Messages are either ['key', shared key]
     // Or ['block', sequence number, block]
     // Or ['error', message] 
-    this.queues = {}
+    this.queues = new Map()
     for (let pubkey of this.otherPubkeys) {
-      this.queues[pubkey] = []
+      this.queues.set(pubkey, [])
     }
 
     // Holds the finished decoded messages for completed rounds until they can
@@ -66,40 +73,68 @@ export default class SparticSession {
 
     this.sendKeys()
   }
+  
+  /// Report the status of the session as a human-readable string
+  getStatus() {
+    if (this.keystream) {
+      if (!this.currentRound) {
+        return 'SETUP: Not in a round'
+      }
+      if (this.currentRound.ourBlock) {
+        return 'RUNNING: In round ' + this.currentRound.sequenceNumber + ', block created, ' + this.results.length + ' results available'
+      } else {
+        return 'RUNNING: In round ' + this.currentRound.sequenceNumber + ', block needed, ' + this.results.length + ' results available'
+      }
+    } else {
+      let missingPeers = 0
+      for (let pubkey of this.otherPubkeys) {
+        if (!this.theirSharedKeys.get(pubkey)) {
+          missingPeers++
+        }
+      }
+      return 'SETUP: Awaiting shared keys from ' + missingPeers + ' peers'
+    }
+  }
 
   /// Send our half of the shared keys to all the peers
   sendKeys() {
     // Start out by telling everyone else our key
     for (let pubkey of this.otherPubkeys) {
-      this.queues[pubkey].push(['key', this.ourSharedKeys[pubkey]])
+      this.queues.get(pubkey).push(['key', this.ourSharedKeys.get(pubkey)])
     }
   }
 
   /// Handle receipt of a shared key from a peer
   receiveKey(pubkey, sharedKey) {
-    if (this.theirSharedKeys[pubkey]) {
+    console.log('Got a shared key')
+    if (this.theirSharedKeys.get(pubkey)) {
       // We already have a key, so complain
-      this.queues[pubkey].push(['error', 'public key already received'])
+      this.queues.get(pubkey).push(['error', 'public key already received'])
       return
     }
     // Store the key
-    this.theirSharedKeys[pubkey] = sharedKey
+    this.theirSharedKeys.set(pubkey, sharedKey)
+    let missingKeys = 0
     for (let pubkey of this.otherPubkeys) {
-      if (!this.theirSharedKeys[pubkey]) {
-        // Stop if any keys are still missing
-        return
+      if (!this.theirSharedKeys.get(pubkey)) {
+        missingKeys++
       }
+    }
+    if (missingKeys > 0) {
+      console.log('Still missing ' + missingKeys + ' shared keys')
+      return
     }
     // Now we are the last key to arrive.
     
     // Make a list of all the keys
     secrets = []
     for (let pubkey of this.otherPubkeys) {
-      secrets.push(this.ourSharedKeys[pubkey])
-      secrets.push(this.theirSharedKeys[pubkey])
+      secrets.push(this.ourSharedKeys.get(pubkey))
+      secrets.push(this.theirSharedKeys.get(pubkey))
     }
 
     // Prepare the keystream
+    console.log('Got all shared keys; Setting up SynchronizedKeystream')
     this.keystream = new SynchronizedKeystream(secrets)
 
     // Advance to first round
@@ -113,7 +148,7 @@ export default class SparticSession {
     } else if (this.nextRound && sequenceNumber == this.nextRound.sequenceNumber) {
       this.receiveBlockForRound(pubkey, block, this.nextRound)
     } else {
-      this.queues[pubkey].push(['error', 'block is for an unacceptable round'])
+      this.queues.get(pubkey).push(['error', 'block is for an unacceptable round'])
       return
     }
     
@@ -134,10 +169,14 @@ export default class SparticSession {
     }
   }
 
-  /// Handle receipt of a block that belongs in the given rounb
+  /// Handle receipt of a block that belongs in the given round
   receiveBlockForRound(pubkey, block, round) {
     if (round.theirBlocks[pubkey]) {
-      this.queues[pubkey].push(['error', 'block is already here'])
+      this.queues.get(pubkey).push(['error', 'block is already here'])
+      return
+    }
+    if (block.length != this.prototype.BLOCK_SIZE) {
+      this.queues.get(pubkey).push(['error', 'block is the wrong size'])
       return
     }
     round.theirBlocks[pubkey] = block
@@ -184,7 +223,7 @@ export default class SparticSession {
 
     for (let pubkey of this.otherPubkeys) {
       // And tell everyone about it
-      this.queues[pubkey].push(['block', this.currentRound.sequenceNumber, this.currentRound.ourBlock])
+      this.queues.get(pubkey).push(['block', this.currentRound.sequenceNumber, this.currentRound.ourBlock])
     }
   }
 
@@ -203,8 +242,8 @@ export default class SparticSession {
   /// Message is:
   /// ['error', message] | ['block', sequenceNumber, data] | ['key', sharedKey]
   popMessage(pubkey) {
-    if (this.queues[pubkey].length > 0) {
-      return this.queues[pubkey].shift()
+    if (this.queues.get(pubkey).length > 0) {
+      return this.queues.get(pubkey).shift()
     } else {
       return null
     }
