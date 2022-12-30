@@ -1,9 +1,9 @@
-import Hyperswarm from 'hyperswarm'
 import Protomux from 'protomux'
 import cenc from 'compact-encoding'
 import ostruct from 'objectstruct'
 
 import SparticSession from './spartic_session.js'
+import P2PTSwarm from './p2pt_swarm.js'
 
 /// Message which carries a shared key to one peer in a group.
 /// Needs to be for a particular group.
@@ -31,7 +31,7 @@ const BlockMessageEncoding = ostruct({
  * Takes care of sending and receiving messages, and routing received messages
  * to the appropriate SparticSession state machines.
  */
-export default class SparticPeer extends Hyperswarm {
+export default class SparticPeer extends P2PTSwarm {
   /// How long are crypto key seeds?
   static get SEED_SIZE() {
     return 32
@@ -49,7 +49,7 @@ export default class SparticPeer extends Hyperswarm {
 
 
   /// Make a new SparticPeer.
-  /// Takes options defined for a Hyperswarm, such as a 32-byte buffer "seed"
+  /// Takes options defined for the vase "swarm" class, such as a 32-byte buffer "seed"
   /// for making the private key.
   constructor(options) {
     super(options)
