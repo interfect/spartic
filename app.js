@@ -2,7 +2,7 @@ import {SparticPeer, SparticSession} from './index.js'
 import crypto from 'hypercore-crypto'
 
 const PEER_COUNT = 4
-const GROUP_ID = 1
+const GROUP_ID = 5
 
 let peers = []
 

@@ -159,7 +159,8 @@ export default class SparticPeer extends P2PTSwarm {
       // Connect to everyone
       this.joinPeer(pubkey)
     }
-    return session
+    // Connect to everyone but in a different way.
+    this.joinTopic(groupId)
   }
 
   /// Send any pending messages in a session
