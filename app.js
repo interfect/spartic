@@ -1,6 +1,13 @@
 import {SparticPeer, SparticSession} from './index.js'
 import crypto from 'hypercore-crypto'
 
+let p = new SparticPeer()
+await p.ready
+
+await p.listen()
+
+/*
+
 const PEER_COUNT = 4
 const GROUP_ID = 5
 
@@ -67,3 +74,5 @@ function tick() {
 }
 
 setTimeout(tick, 10000)
+
+*/

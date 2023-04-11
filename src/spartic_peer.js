@@ -3,7 +3,7 @@ import cenc from 'compact-encoding'
 import ostruct from 'objectstruct'
 
 import SparticSession from './spartic_session.js'
-import P2PTSwarm from './p2pt_swarm.js'
+import LibP2PSwarm from './libp2p_swarm.js'
 
 /// Message which carries a shared key to one peer in a group.
 /// Needs to be for a particular group.
@@ -30,8 +30,10 @@ const BlockMessageEncoding = ostruct({
  *
  * Takes care of sending and receiving messages, and routing received messages
  * to the appropriate SparticSession state machines.
+ *
+ * The promise in .ready must be awaited after construction.
  */
-export default class SparticPeer extends P2PTSwarm {
+export default class SparticPeer extends LibP2PSwarm {
   /// How long are crypto key seeds?
   static get SEED_SIZE() {
     return 32
@@ -49,104 +51,107 @@ export default class SparticPeer extends P2PTSwarm {
 
 
   /// Make a new SparticPeer.
-  /// Takes options defined for the vase "swarm" class, such as a 32-byte buffer "seed"
+  /// Takes options defined for the base "swarm" class, such as a 32-byte buffer "seed"
   /// for making the private key.
   constructor(options) {
     super(options)
-    this.log('My public key is ', this.keyPair.publicKey)
-
-    // We need a table to map from connected peer pubkey to fancy struct, and
-    // so we can drop them when the peer goes away.
-    // TODO: Do we really have 1 connection per pubkey? 
-    this._messengers = new Map()
-
-    // We also have a collection of sessions for rings we are in, to keep their state.
-    // Maps from group ID to SparticSession
-    this._sessions = new Map()
-
-    this.on('connection', (conn, info) => {
-      this.log('Connected to: ', this.constructor.keyToName(info.publicKey))
-      
-      if (this._messengers.has(info.publicKey)) {
-        this.log('Duplicate connection with (' + this.constructor.keyToName(info.publicKey) + ')')
-        throw new Error('Duplicate connection!')
-      }
-      
-      conn.on('data', (data) => {
-        this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'Got ' + data.length + ' bytes')
-      })
-      
-      // Connections are already message-oriented, length-prefixed streams of entire buffers. 
-      // We need a real protocol over this though, since among other things we might need to be in multiple simultaneous groups with the same peer.
-      // So define a protocol with Protomux
-      let mux = new Protomux(conn)
-      let channel = mux.createChannel({
-        userData: this,
-        protocol: 'spartic',
-        onopen: () => {
-          // The channel is open.
-          // Could have a handshake argument
-          this.log('Opened Spartic channel with (' + this.constructor.keyToName(info.publicKey) + ')')
-        },
-        onclose: () => {
-          // The channel is closed.
-          this.log('Closed Spartic channel with (' + this.constructor.keyToName(info.publicKey) + ')')
-        }
-      })
-      let textMessage = channel.addMessage({
-        encoding: cenc.utf8,
-        onmessage: async (message) => {
-          // A message has arrived
-          this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'ALERT!', message)
-        }
-      })
-      let keyMessage = channel.addMessage({
-        encoding: cenc.from(KeyMessageEncoding),
-        onmessage: async (message) => {
-          this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', message)
-          let session = this.sessionFor(message.groupId, info.publicKey)
-          if (session) {
-            // This shared key belongs in this session so put it there
-            session.receiveKey(info.publicKey, message.sharedKey)
-          } else {
-            textMessage.send('unexpected key')
-          }
-        }
-      })
-      let blockMessage = channel.addMessage({
-        encoding: cenc.from(BlockMessageEncoding),
-        onmessage: async (message) => {
-          this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'Round ' + message.sequenceNumber + ', ' + message.data.length + ' byte block')
-          let session = this.sessionFor(message.groupId, info.publicKey)
-          if (session) {
-            // This block belongs in this session so put it there
-            session.receiveBlock(info.publicKey, message.sequenceNumber, message.data)
-          } else {
-            textMessage.send('unexpected block')
-          }
-        }
-      })
-      
-      
-      // Save the fancy channel thingy
-      this._messengers.set(info.publicKey, {
-        mux: mux,
-        channel: channel,
-        keyMessage: keyMessage,
-        blockMessage: blockMessage,
-        textMessage: textMessage
-      })
-      
-      conn.on('close', () => {
-        // When the connection closes, remove the fancy channel thingy
-        this.log('Closed connection with (' + this.constructor.keyToName(info.publicKey) + ')')
-        this._messengers.delete(info.publicKey)
-      })
-      
-      // TODO: Protomux API docs say we should open the message, but really we open the channel.
-      channel.open()
-    })
     
+    this.ready = this.ready.then(() => {
+    
+      this.log('My public key is ', this.keyPair.publicKey)
+
+      // We need a table to map from connected peer pubkey to fancy struct, and
+      // so we can drop them when the peer goes away.
+      // TODO: Do we really have 1 connection per pubkey? 
+      this._messengers = new Map()
+
+      // We also have a collection of sessions for rings we are in, to keep their state.
+      // Maps from group ID to SparticSession
+      this._sessions = new Map()
+
+      this.on('connection', (conn, info) => {
+        this.log('Connected to: ', this.constructor.keyToName(info.publicKey))
+        
+        if (this._messengers.has(info.publicKey)) {
+          this.log('Duplicate connection with (' + this.constructor.keyToName(info.publicKey) + ')')
+          throw new Error('Duplicate connection!')
+        }
+        
+        conn.on('data', (data) => {
+          this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'Got ' + data.length + ' bytes')
+        })
+        
+        // Connections are already message-oriented, length-prefixed streams of entire buffers. 
+        // We need a real protocol over this though, since among other things we might need to be in multiple simultaneous groups with the same peer.
+        // So define a protocol with Protomux
+        let mux = new Protomux(conn)
+        let channel = mux.createChannel({
+          userData: this,
+          protocol: 'spartic',
+          onopen: () => {
+            // The channel is open.
+            // Could have a handshake argument
+            this.log('Opened Spartic channel with (' + this.constructor.keyToName(info.publicKey) + ')')
+          },
+          onclose: () => {
+            // The channel is closed.
+            this.log('Closed Spartic channel with (' + this.constructor.keyToName(info.publicKey) + ')')
+          }
+        })
+        let textMessage = channel.addMessage({
+          encoding: cenc.utf8,
+          onmessage: async (message) => {
+            // A message has arrived
+            this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'ALERT!', message)
+          }
+        })
+        let keyMessage = channel.addMessage({
+          encoding: cenc.from(KeyMessageEncoding),
+          onmessage: async (message) => {
+            this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', message)
+            let session = this.sessionFor(message.groupId, info.publicKey)
+            if (session) {
+              // This shared key belongs in this session so put it there
+              session.receiveKey(info.publicKey, message.sharedKey)
+            } else {
+              textMessage.send('unexpected key')
+            }
+          }
+        })
+        let blockMessage = channel.addMessage({
+          encoding: cenc.from(BlockMessageEncoding),
+          onmessage: async (message) => {
+            this.log('<-', '(' + this.constructor.keyToName(info.publicKey) + ')', 'Round ' + message.sequenceNumber + ', ' + message.data.length + ' byte block')
+            let session = this.sessionFor(message.groupId, info.publicKey)
+            if (session) {
+              // This block belongs in this session so put it there
+              session.receiveBlock(info.publicKey, message.sequenceNumber, message.data)
+            } else {
+              textMessage.send('unexpected block')
+            }
+          }
+        })
+        
+        
+        // Save the fancy channel thingy
+        this._messengers.set(info.publicKey, {
+          mux: mux,
+          channel: channel,
+          keyMessage: keyMessage,
+          blockMessage: blockMessage,
+          textMessage: textMessage
+        })
+        
+        conn.on('close', () => {
+          // When the connection closes, remove the fancy channel thingy
+          this.log('Closed connection with (' + this.constructor.keyToName(info.publicKey) + ')')
+          this._messengers.delete(info.publicKey)
+        })
+        
+        // TODO: Protomux API docs say we should open the message, but really we open the channel.
+        channel.open()
+      })
+    })
   }
 
   /// Make a new session with the given ID for the given peer keys and start it up.
