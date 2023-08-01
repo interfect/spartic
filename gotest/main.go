@@ -109,13 +109,13 @@ func parsePeer(target string) (*peer.AddrInfo, error) {
 
     if strings.HasPrefix(target, "/") {
         // Probably a multiaddr
-        addr, err := multiaddr.NewMultiaddr(os.Args[2])
+        addr, err := multiaddr.NewMultiaddr(target)
         if err != nil {
-            return nil, err
+            return nil, fmt.Errorf("could not parse multiaddr: %w", err)
         }
         peerInfo, err := peer.AddrInfoFromP2pAddr(addr)
         if err != nil {
-            return nil, err
+            return nil, fmt.Errorf("could not get peer info from multiaddr: %w", err)
         }
         
         return peerInfo, nil
