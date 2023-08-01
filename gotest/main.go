@@ -65,7 +65,6 @@ func makeNode(ctx context.Context, store ds.Batching) (host.Host, *dht.IpfsDHT, 
     // Start a libp2p node with that key
     baseNode, err := libp2p.New(
         libp2p.Identity(privKey),
-        libp2p.ListenAddrStrings("/ip6/::/udp/0/quic-v1/webtransport"),
         libp2p.NATPortMap(),
     )
     if err != nil {
